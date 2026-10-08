@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三重區診所與機車停車灣地圖</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #sidebar {
+            width: 360px;
+            height: 100%;
+            background: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+        .header {
+            padding: 16px;
+            background: #007bff;
+            color: white;
+        }
+        .header h1 {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+        .search-box {
+            padding: 12px 16px;
+            background: #fff;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            outline: none;
+        }
+        .filter-tabs {
+            display: flex;
+            background: #e9ecef;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-weight: bold;
+            color: #495057;
+        }
+        .tab-btn.active {
+            background: #fff;
+            color: #007bff;
+            border-bottom: 2px solid #007bff;
+        }
+        .list-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .card:hover {
+            border-color: #007bff;
+            box-shadow: 0 2px 8px rgba(0,123,255,0.15);
+        }
+        .card h3 {
+            font-size: 15px;
+            color: #212529;
+            margin-bottom: 4px;
+        }
+        .card p {
+            font-size: 13px;
+            color: #6c757d;
+            margin-bottom: 3px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 11px;
+            border-radius: 3px;
+            background: #e7f5ff;
+            color: #1971c2;
+            margin-top: 4px;
+        }
+        #map {
+            flex: 1;
+            height: 100%;
+        }
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column-reverse;
+            }
+            #sidebar {
+                width: 100%;
+                height: 40%;
+            }
+            #map {
+                height: 60%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="header">
+            <h1>三重區醫療與機車停車地圖</h1>
+        </div>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="搜尋名稱、科別或地址..." onkeyup="filterList()">
+        </div>
+        <div class="filter-tabs">
+            <button class="tab-btn active" id="tabClinic" onclick="switchTab('clinic')">診所醫院</button>
+            <button class="tab-btn" id="tabParking" onclick="switchTab('parking')">機車停車灣</button>
+        </div>
+        <div class="list-container" id="listContainer">
+            <!-- 動態渲染清單 -->
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 資料集
+        const clinics = [
+            { name: "新北市立聯合醫院（三重院區）", type: "地區醫院", dept: "全科（急診、內科、外科、婦產科、小兒科、骨科、復健科等）", phone: "02-29829111", address: "新北市三重區新北大道一段3號", lat: 25.061036, lng: 121.487059 },
+            { name: "衛生福利部臺北醫院三重門診部", type: "門診部", dept: "一般內科、家醫科", phone: "02-29832205", address: "新北市三重區中山路2號", lat: 25.061750, lng: 121.486250 },
+            { name: "新店耕莘醫院三重門診部", type: "門診部", dept: "家醫科、內科", phone: "02-29881881", address: "新北市三重區正義北路156號", lat: 25.067330, lng: 121.496220 },
+            { name: "祐民醫院", type: "地區醫院", dept: "內科、外科、骨科、復健科", phone: "02-29958888", address: "新北市三重區重新路五段609巷14號", lat: 25.050510, lng: 121.468240 },
+            { name: "宏仁醫院", type: "地區醫院", dept: "內科、慢性病照護", phone: "02-29829222", address: "新北市三重區三和路二段186號", lat: 25.068910, lng: 121.498450 },
+            { name: "三重信合美診所", type: "診所", dept: "眼科、皮膚科", phone: "02-29868888", address: "新北市三重區重新路二段31號", lat: 25.062890, lng: 121.497550 },
+            { name: "三重遠東耳鼻喉科診所", type: "診所", dept: "耳鼻喉科、小兒科", phone: "02-29813588", address: "新北市三重區正義北路108號", lat: 25.065840, lng: 121.496010 },
+            { name: "祥太內科小兒科診所", type: "診所", dept: "內科、小兒科、慢性病門診", phone: "02-29806111", address: "新北市三重區正義北路210號", lat: 25.069120, lng: 121.496450 },
+            { name: "三重品爵牙醫診所", type: "診所", dept: "牙科、植牙、矯正", phone: "02-29891122", address: "新北市三重區重新路一段101號", lat: 25.063120, lng: 121.500120 },
+            { name: "仁愛中醫診所", type: "診所", dept: "中醫科、針灸科", phone: "02-29837788", address: "新北市三重區三和路三段20號", lat: 25.071230, lng: 121.499870 }
+        ];
+
+        const parkings = [
+            { address: "重新路4段23號", length: "1.9m", q1: 2, lat: 25.0613, lng: 121.4960 },
+            { address: "重新路4段25號", length: "4.6m", q1: 5, lat: 25.0616, lng: 121.4969 },
+            { address: "重新路4段27號", length: "2.8m", q1: 3, lat: 25.0619, lng: 121.4978 },
+            { address: "正義北路108號周邊", length: "3.5m", q1: 4, lat: 25.0659, lng: 121.4961 },
+            { address: "三和路二段186號周邊", length: "5.0m", q1: 6, lat: 25.0688, lng: 121.4985 },
+            { address: "新北大道一段3號周邊", length: "6.2m", q1: 8, lat: 25.0611, lng: 121.4872 }
+        ];
+
+        // 初始化地圖
+        const map = L.map('map').setView([25.0645, 121.4925], 14);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // 圖層分組
+        const clinicLayer = L.layerGroup().addTo(map);
+        const parkingLayer = L.layerGroup().addTo(map);
+
+        // 圖層控制項
+        L.control.layers(null, {
+            "🏥 醫療院所": clinicLayer,
+            "🛵 機車停車灣": parkingLayer
+        }, { collapsed: false }).addTo(map);
+
+        let currentTab = 'clinic';
+        const markersMap = new Map();
+
+        // 渲染診所標籤
+        clinics.forEach((item, index) => {
+            const marker = L.marker([item.lat, item.lng])
+                .bindPopup(`
+                    <div style="font-size: 14px;">
+                        <h4 style="margin-bottom:5px; color:#007bff;">${item.name}</h4>
+                        <p><b>類型：</b>${item.type}</p>
+                        <p><b>科別：</b>${item.dept}</p>
+                        <p><b>電話：</b>${item.phone}</p>
+                        <p><b>地址：</b>${item.address}</p>
+                    </div>
+                `);
+            clinicLayer.addLayer(marker);
+            markersMap.set(`clinic_${index}`, marker);
+        });
+
+        // 渲染停車灣標籤
+        parkings.forEach((item, index) => {
+            const circle = L.circleMarker([item.lat, item.lng], {
+                radius: 7,
+                fillColor: "#ff7800",
+                color: "#000",
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).bindPopup(`
+                <div style="font-size: 14px;">
+                    <h4 style="margin-bottom:5px; color:#ff7800;">🛵 機車停車灣</h4>
+                    <p><b>地址：</b>${item.address}</p>
+                    <p><b>長度：</b>${item.length}</p>
+                    <p><b>車位數：</b>${item.q1} 個</p>
+                </div>
+            `);
+            parkingLayer.addLayer(circle);
+            markersMap.set(`parking_${index}`, circle);
+        });
+
+        // 渲染側邊欄清單
+        function renderList() {
+            const container = document.getElementById('listContainer');
+            const keyword = document.getElementById('searchInput').value.toLowerCase();
+            container.innerHTML = '';
+
+            if (currentTab === 'clinic') {
+                clinics.forEach((item, index) => {
+                    if (item.name.toLowerCase().includes(keyword) || 
+                        item.dept.toLowerCase().includes(keyword) || 
+                        item.address.toLowerCase().includes(keyword)) {
+                        
+                        const card = document.createElement('div');
+                        card.className = 'card';
+                        card.onclick = () => focusOnMap('clinic', index);
+                        card.innerHTML = `
+                            <h3>${item.name}</h3>
+                            <p>📞 ${item.phone}</p>
+                            <p>📍 ${item.address}</p>
+                            <span class="badge">${item.dept}</span>
+                        `;
+                        container.appendChild(card);
+                    }
+                });
+            } else {
+                parkings.forEach((item, index) => {
+                    if (item.address.toLowerCase().includes(keyword)) {
+                        const card = document.createElement('div');
+                        card.className = 'card';
+                        card.onclick = () => focusOnMap('parking', index);
+                        card.innerHTML = `
+                            <h3>🛵 停車灣: ${item.address}</h3>
+                            <p>📐 長度：${item.length}</p>
+                            <p>🅿️ 格位數量：${item.q1} 格</p>
+                        `;
+                        container.appendChild(card);
+                    }
+                });
+            }
+        }
+
+        // 聚焦地圖位置
+        function focusOnMap(type, index) {
+            const item = type === 'clinic' ? clinics[index] : parkings[index];
+            const marker = markersMap.get(`${type}_${index}`);
+            
+            map.flyTo([item.lat, item.lng], 16, { duration: 1.2 });
+            setTimeout(() => {
+                marker.openPopup();
+            }, 1200);
+        }
+
+        // 切換 Tab
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('tabClinic').classList.toggle('active', tab === 'clinic');
+            document.getElementById('tabParking').classList.toggle('active', tab === 'parking');
+            renderList();
+        }
+
+        // 搜尋過濾
+        function filterList() {
+            renderList();
+        }
+
+        // 初次渲染
+        renderList();
+    </script>
+</body>
+</html>
